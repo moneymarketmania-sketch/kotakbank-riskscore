@@ -2,6 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf
 import numpy as np
+import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="NSE Risk Score Report", layout="wide", page_icon="📊")
@@ -11,8 +12,21 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
     .stApp { background-color: #08090d; color: #dde1ef; }
-    .glass-card { background: linear-gradient(145deg, #12141d, #1a1d2b); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 28px; margin-bottom: 24px; }
-    .header-bar { background: linear-gradient(135deg, #1a1d2b, #12141d); border: 1px solid #e85d2e; border-radius: 20px; padding: 24px 32px; margin-bottom: 32px; }
+    .glass-card { 
+        background: linear-gradient(145deg, #12141d, #1a1d2b); 
+        border: 1px solid rgba(255,255,255,0.08); 
+        border-radius: 24px; 
+        padding: 28px; 
+        margin-bottom: 24px; 
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    .header-bar {
+        background: linear-gradient(135deg, #1a1d2b, #12141d);
+        border: 1px solid #e85d2e;
+        border-radius: 20px;
+        padding: 24px 32px;
+        margin-bottom: 32px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -25,7 +39,7 @@ if st.sidebar.button("🔄 Fetch Live Data", type="primary", use_container_width
     st.session_state.fetch = True
     st.rerun()
 
-# Use session state to force update
+# Use session state
 if "symbol" not in st.session_state:
     st.session_state.symbol = symbol_input
 
@@ -33,7 +47,7 @@ current_symbol = st.session_state.symbol
 stock_symbol = f"{current_symbol}.NS"
 
 # ====================== FETCH DATA ======================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def get_data(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -45,7 +59,7 @@ def get_data(ticker):
 
 info, hist = get_data(stock_symbol)
 
-# Live Values
+# ====================== LIVE VALUES ======================
 if info and not hist.empty:
     price = info.get('currentPrice') or hist['Close'].iloc[-1]
     prev_close = info.get('regularMarketPreviousClose') or hist['Close'].iloc[-2] if len(hist) > 1 else price
@@ -172,4 +186,4 @@ with tab3:
     """)
     st.markdown('</div>', unsafe_allow_html=True)
 
-st.caption("Live yfinance data • Not financial advice")
+st.caption("Live yfinance data • Not financial advice • Educational use only")
