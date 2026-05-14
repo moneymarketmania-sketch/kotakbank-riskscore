@@ -240,6 +240,8 @@ iframe { border-radius: 12px !important; }
 #  DATA LAYER — Replace placeholders with real yfinance / NSE API calls
 # ══════════════════════════════════════════════════════════════════════════════
 
+import yfinance as yf
+
 @st.cache_data(ttl=60, show_spinner=False)   # ← Changed to 60 seconds for fresher data
 def fetch_stock_data(symbol: str) -> dict:
     """
@@ -402,76 +404,6 @@ def fetch_stock_data(symbol: str) -> dict:
             "change_pct": round(np.random.uniform(-4, 4), 2),
             # ... add other fields if needed
         }
-
-    except Exception as e:
-        st.warning(f"⚠️ Could not fetch live data for {symbol} — using fallback synthetic data")
-        # Fallback to your original synthetic function
-        np.random.seed(abs(hash(symbol)) % (2**31))
-        # ... (your original synthetic code from the placeholder function)
-        # (I kept the original logic below for safety)
-        price = round(np.random.uniform(200, 4000), 2)
-        # ... (copy-paste the rest of your original synthetic block if you want perfect fallback)
-        # For brevity, returning minimal working dict
-        return {
-            "symbol": symbol,
-            "price": price,
-            "change_pct": round(np.random.uniform(-4, 4), 2),
-            # ... you can keep the rest of the original synthetic return if you want
-        }
-
-    # Candle data (synthetic)
-    dates  = pd.date_range(end=datetime.today(), periods=120, freq='B')
-    prices = [price]
-    for _ in range(119):
-        prices.insert(0, prices[0] * (1 + np.random.normal(0, 0.012)))
-    highs  = [p * (1 + abs(np.random.normal(0, 0.008))) for p in prices]
-    lows   = [p * (1 - abs(np.random.normal(0, 0.008))) for p in prices]
-    opens  = [p * (1 + np.random.normal(0, 0.005)) for p in prices]
-    vols   = [int(volume * np.random.uniform(0.5, 1.5)) for _ in prices]
-
-    return {
-        "symbol": symbol.upper(),
-        "price": price, "change_pct": change_pct, "volume": volume,
-        "mkt_cap": mkt_cap, "beta": beta, "atr": atr,
-        "risk_score": risk_score, "hist_var": hist_var, "max_dd": max_dd,
-        "rsi": rsi, "macd_val": macd_val, "macd_sig": macd_sig, "adx": adx,
-        "analyst_tp": analyst_tp, "upside": upside,
-        "pe_curr": pe_curr, "pe_5y": pe_5y, "pb_curr": pb_curr,
-        "roe": roe, "de_ratio": de_ratio, "pledge_pct": pledge_pct,
-        "pcr": pcr, "max_pain": max_pain,
-        "entry_low": entry_low, "entry_high": entry_high,
-        "sl": sl, "t1": t1, "t2": t2, "rr": rr, "verdict": verdict,
-        "dates": dates, "opens": opens, "highs": highs,
-        "lows": lows, "closes": prices, "volumes": vols,
-        # SMA / EMA (synthetic offsets)
-        "sma20": round(price * 0.988, 2), "sma50": round(price * 0.965, 2),
-        "sma200": round(price * 0.921, 2),
-        "ema9": round(price * 0.996, 2), "ema21": round(price * 0.981, 2),
-        # Fib levels (from last swing low ~price*0.88)
-        "fib_236": round(price * 0.88 + (price - price*0.88)*0.236, 2),
-        "fib_382": round(price * 0.88 + (price - price*0.88)*0.382, 2),
-        "fib_500": round(price * 0.88 + (price - price*0.88)*0.500, 2),
-        "fib_618": round(price * 0.88 + (price - price*0.88)*0.618, 2),
-        "fib_786": round(price * 0.88 + (price - price*0.88)*0.786, 2),
-        # Astro / Gann (purely supplementary)
-        "sbc_score": int(np.random.uniform(25, 80)),
-        "gann_degree": round(np.random.uniform(0, 360), 1),
-        "gann_sq9_next": round(price * np.random.uniform(1.02, 1.06), 2),
-        "gann_sq9_support": round(price * np.random.uniform(0.94, 0.98), 2),
-    }
-
-
-def gann_square_of_nine(price: float):
-    """Returns nearby Gann SQ9 levels around the given price."""
-    root = math.sqrt(price)
-    levels = []
-    for i in range(-3, 4):
-        adjusted_root = root + i * 0.25
-        if adjusted_root > 0:
-            level = round(adjusted_root**2, 2)
-            levels.append(level)
-    return sorted(levels)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHART HELPERS
