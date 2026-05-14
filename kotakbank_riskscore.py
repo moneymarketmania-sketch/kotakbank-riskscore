@@ -236,13 +236,16 @@ iframe { border-radius: 12px !important; }
 """, unsafe_allow_html=True)
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-#  FETCH STOCK DATA — REAL NSE + BEST LATEST PRICE LOGIC
+#  FETCH STOCK DATA — MOST RELIABLE VERSION (History-first approach)
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=60, show_spinner=False)   # 60-second cache = very fresh data
-def fetch_stock_data(symbol: str) -> dict:
+
+@st.cache_data(ttl=30, show_spinner=False)
+def fetch_stock_data(symbol: str, refresh_key: str = "default") -> dict:
     """
-    REAL NSE data using yfinance with the BEST possible latest price fetching.
+    Most reliable price fetching for NSE stocks.
+    refresh_key forces fresh data when changed.
     """
     symbol = symbol.upper().strip()
     if not symbol:
@@ -251,53 +254,61 @@ def fetch_stock_data(symbol: str) -> dict:
     try:
         ticker = yf.Ticker(f"{symbol}.NS")
 
-        # ── BEST PRICE FETCHING (this fixes the "not latest price" issue) ──
+        # ── MOST RELIABLE PRICE LOGIC (History first) ─────────────────────
+        # Get recent daily data
+        hist_daily = ticker.history(period="5d")
         price = None
         prev_close = None
 
-        # Priority 1: fast_info (most accurate live price)
-        try:
-            fast = ticker.fast_info
-            price = fast.get('lastPrice') or fast.get('regularMarketPrice')
-            prev_close = fast.get('regularMarketPreviousClose') or fast.get('previousClose')
-        except:
-            pass
+        if not hist_daily.empty:
+            price = round(hist_daily['Close'].iloc[-1], 2)
+            if len(hist_daily) > 1:
+                prev_close = round(hist_daily['Close'].iloc[-2], 2)
 
-        # Priority 2: fallback to info
+        # Try live intraday for even fresher price (during market hours)
+        if price is None or price <= 0:
+            try:
+                hist_intraday = ticker.history(period="1d", interval="1m")
+                if not hist_intraday.empty:
+                    price = round(hist_intraday['Close'].iloc[-1], 2)
+            except:
+                pass
+
+        # Final fallback to fast_info / info
+        if price is None or price <= 0:
+            try:
+                fast = ticker.fast_info
+                price = fast.get('lastPrice') or fast.get('regularMarketPrice')
+                if prev_close is None:
+                    prev_close = fast.get('regularMarketPreviousClose')
+            except:
+                pass
+
         if price is None or price <= 0:
             info = ticker.info
-            price = (info.get('currentPrice') or 
-                     info.get('regularMarketPrice') or 
+            price = (info.get('currentPrice') or info.get('regularMarketPrice') or 
                      info.get('previousClose'))
             if prev_close is None:
                 prev_close = info.get('regularMarketPreviousClose') or info.get('previousClose')
-
-        # Priority 3: last resort from history
-        if price is None or price <= 0:
-            hist_temp = ticker.history(period="5d")
-            if not hist_temp.empty:
-                price = round(hist_temp['Close'].iloc[-1], 2)
-                if len(hist_temp) > 1:
-                    prev_close = round(hist_temp['Close'].iloc[-2], 2)
 
         if price is None or price <= 0:
             raise ValueError("Could not fetch price")
 
         change_pct = round(((price - (prev_close or price)) / (prev_close or price) * 100), 2) if prev_close else 0.0
 
-        # ── Full history for chart ───────────────────────────────────────
+        # ── Full history for chart (120 trading days) ─────────────────────
         hist = ticker.history(period="1y")
         recent_hist = hist.tail(120).copy()
 
-        # ── Real Technical Indicators ───────────────────────────────────
-        # RSI (14)
+        # ── Technical Indicators (real) ───────────────────────────────────
+        # RSI
         delta = recent_hist['Close'].diff()
         gain = delta.where(delta > 0, 0).rolling(14).mean()
         loss = -delta.where(delta < 0, 0).rolling(14).mean()
         rs = gain / loss
         rsi = round(100 - (100 / (1 + rs)).iloc[-1], 1) if len(rs) > 0 and not pd.isna((100 - (100 / (1 + rs)).iloc[-1])) else 50.0
 
-        # ATR (14)
+        # ATR
         tr1 = recent_hist['High'] - recent_hist['Low']
         tr2 = abs(recent_hist['High'] - recent_hist['Close'].shift())
         tr3 = abs(recent_hist['Low'] - recent_hist['Close'].shift())
@@ -319,7 +330,7 @@ def fetch_stock_data(symbol: str) -> dict:
         ema9 = round(recent_hist['Close'].ewm(span=9, adjust=False).mean().iloc[-1], 2)
         ema21 = round(recent_hist['Close'].ewm(span=21, adjust=False).mean().iloc[-1], 2)
 
-        # Fibonacci Retracements
+        # Fibonacci
         fib_base = recent_hist['Low'].min()
         fib_high = recent_hist['High'].max()
         diff = fib_high - fib_base
@@ -329,7 +340,7 @@ def fetch_stock_data(symbol: str) -> dict:
         fib_618 = round(fib_base + diff * 0.618, 2)
         fib_786 = round(fib_base + diff * 0.786, 2)
 
-        # ── Risk & Trade Plan (still synthetic as before) ───────────────
+        # Risk score & Trade Plan (synthetic)
         np.random.seed(abs(hash(symbol)) % (2**31))
         risk_score = int(np.random.uniform(28, 78))
         max_dd = round(((hist['Close'] / hist['Close'].cummax()) - 1).min() * 100, 1)
@@ -381,28 +392,22 @@ def fetch_stock_data(symbol: str) -> dict:
             "ema9": ema9, "ema21": ema21,
             "fib_236": fib_236, "fib_382": fib_382, "fib_500": fib_500,
             "fib_618": fib_618, "fib_786": fib_786,
-            # Astro / Gann (still synthetic)
+            # Astro / Gann
             "sbc_score": int(np.random.uniform(25, 80)),
             "gann_degree": round(np.random.uniform(0, 360), 1),
             "gann_sq9_next": round(price * np.random.uniform(1.02, 1.06), 2),
             "gann_sq9_support": round(price * np.random.uniform(0.94, 0.98), 2),
         }
 
-    except Exception:
-        st.warning(f"⚠️ Could not fetch live data for {symbol} — using synthetic fallback")
-        # Original synthetic fallback (kept for safety)
+    except Exception as e:
+        st.error(f"⚠️ Error fetching {symbol}: {str(e)}")
+        st.warning("Using synthetic fallback data")
         np.random.seed(abs(hash(symbol)) % (2**31))
         price = round(np.random.uniform(200, 4000), 2)
-        return {
-            "symbol": symbol,
-            "price": price,
-            "change_pct": round(np.random.uniform(-4, 4), 2),
-            # ... (you can expand this if you want full synthetic fallback)
-        }
-
+        return {"symbol": symbol, "price": price, "change_pct": round(np.random.uniform(-4, 4), 2)}
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  GANN SQUARE OF NINE (needed by Sentiment tab)
+#  GANN SQUARE OF NINE
 # ─────────────────────────────────────────────────────────────────────────────
 def gann_square_of_nine(price: float):
     """Returns nearby Gann SQ9 levels around the given price."""
@@ -414,6 +419,7 @@ def gann_square_of_nine(price: float):
             level = round(adjusted_root**2, 2)
             levels.append(level)
     return sorted(levels)
+    
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHART HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -571,18 +577,32 @@ def render_search_tab():
 # ── Full Report (sub-tabs) ────────────────────────────────────────────────────
 def render_full_report(d: dict):
     sym = d["symbol"]
-    st.markdown(f"""
-    <div style='padding:0.8rem 0 0.5rem 0; display:flex; align-items:center; gap:1rem;'>
-        <span style='font-size:1.6rem; font-weight:800; color:#f1f5f9;'>{sym}</span>
-        <span style='font-family:JetBrains Mono; font-size:1.4rem; color:#f1f5f9;'>
-            ₹{d['price']:,.2f}
-        </span>
-        <span class='{"positive" if d["change_pct"]>=0 else "negative"}'>
-            {'▲' if d['change_pct']>=0 else '▼'} {abs(d['change_pct']):.2f}%
-        </span>
-        <span style='color:#475569; font-size:0.8rem;'>NSE · Live placeholder</span>
-    </div>
-    """, unsafe_allow_html=True)
+    
+    # ── Price Header with Refresh Button ───────────────────────────────
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.markdown(f"""
+        <div style='padding:0.8rem 0 0.5rem 0; display:flex; align-items:center; gap:1rem;'>
+            <span style='font-size:1.6rem; font-weight:800; color:#f1f5f9;'>{sym}</span>
+            <span style='font-family:JetBrains Mono; font-size:1.4rem; color:#f1f5f9;'>
+                ₹{d['price']:,.2f}
+            </span>
+            <span class='{"positive" if d["change_pct"]>=0 else "negative"}'>
+                {'▲' if d['change_pct']>=0 else '▼'} {abs(d['change_pct']):.2f}%
+            </span>
+            <span style='color:#475569; font-size:0.8rem;'>NSE · Live</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        if st.button("🔄 Refresh Live Price", use_container_width=True, type="secondary"):
+            with st.spinner("Fetching latest price..."):
+                st.cache_data.clear()           # Clear cache
+                if "refresh_key" not in st.session_state:
+                    st.session_state.refresh_key = 0
+                st.session_state.refresh_key += 1
+                st.rerun()
+
 
     r1, r2, r3 = st.tabs(["📊 Risk Overview", "🌙 Sentiment Overlay", "📈 Technical Deep Dive"])
     with r1:
