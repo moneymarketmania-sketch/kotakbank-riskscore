@@ -7,41 +7,47 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="NSE Risk Score Report", layout="wide", page_icon="📊")
 
-# ====================== CSS (Matches your VEDL HTML) ======================
+# ====================== CSS ======================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
     .stApp { background-color: #08090d; color: #dde1ef; }
     .glass-card { background: #12141d; border: 1px solid #252836; border-radius: 16px; padding: 24px; margin-bottom: 24px; }
     .mono { font-family: 'JetBrains Mono', monospace; }
-    .nav-tab { font-family: 'JetBrains Mono'; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
 </style>
 """, unsafe_allow_html=True)
 
 # ====================== SIDEBAR ======================
 st.sidebar.header("📊 NSE Risk Score Report")
-symbol_input = st.sidebar.text_input("NSE Symbol", value="VEDL").upper()
+symbol_input = st.sidebar.text_input("NSE Symbol", value="VEDL").upper().strip()
 stock_symbol = f"{symbol_input}.NS"
 
-if st.sidebar.button("🔄 Fetch Live Data", type="primary"):
-    st.session_state.fetch = True
+fetch_clicked = st.sidebar.button("🔄 Fetch Live Data", type="primary")
 
-# ====================== FETCH LIVE DATA ======================
-@st.cache_data(ttl=300)
+# ====================== FETCH DATA ======================
+@st.cache_data(ttl=180)
 def get_data(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
         hist = stock.history(period="6mo")
         return info, hist
-    except:
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
         return None, pd.DataFrame()
 
-info, hist = get_data(stock_symbol)
+if fetch_clicked or "last_symbol" not in st.session_state or st.session_state.last_symbol != symbol_input:
+    info, hist = get_data(stock_symbol)
+    st.session_state.info = info
+    st.session_state.hist = hist
+    st.session_state.last_symbol = symbol_input
+else:
+    info = st.session_state.get("info")
+    hist = st.session_state.get("hist")
 
-# Live values
+# Live Values
 if info and not hist.empty:
-    price = info.get('currentPrice') or hist['Close'].iloc[-1]
+    price = info.get('currentPrice') or info.get('regularMarketPrice') or hist['Close'].iloc[-1]
     prev_close = info.get('regularMarketPreviousClose') or hist['Close'].iloc[-2] if len(hist) > 1 else price
     change = price - prev_close
     change_pct = (change / prev_close) * 100 if prev_close else 0
@@ -49,10 +55,15 @@ if info and not hist.empty:
     mkt_cap = f"₹{(info.get('marketCap', 0)/10**12):.2f}T"
     name = info.get('longName', f"{symbol_input} Ltd.")
 else:
-    price, change, change_pct, volume, mkt_cap, name = 334.55, 11.20, 3.46, "18.31M", "₹1.24T", "Vedanta Limited"
+    price = 334.55
+    change = 11.20
+    change_pct = 3.46
+    volume = "18.31M"
+    mkt_cap = "₹1.24T"
+    name = f"{symbol_input} Ltd."
 
-# ====================== DYNAMIC CALCULATIONS ======================
-def calculate_risk_score(info, hist):
+# ====================== DYNAMIC FUNCTIONS ======================
+def calculate_risk_score(info, hist, symbol):
     if hist.empty or len(hist) < 30:
         return 47, 58, 72, 81, 45
     closes = hist['Close'].values
@@ -60,18 +71,34 @@ def calculate_risk_score(info, hist):
     volatility = np.std(returns) * np.sqrt(252) * 100
     beta = info.get('beta', 1.0) or 1.0
     quant = min(95, max(20, int(volatility * 1.8 + beta * 15)))
-    tech = 72
-    fund = 81
-    seed = sum(ord(c) for c in symbol_input)
+    tech = 75 if price > closes[-20:].mean() else 45
+    fund = 82
+    seed = sum(ord(c) for c in symbol)
     senti = max(30, min(80, 45 + (seed % 35)))
     overall = int(0.4*quant + 0.3*tech + 0.2*fund + 0.1*senti)
     return overall, quant, tech, fund, senti
 
-overall_risk, quant, tech, fund, senti = calculate_risk_score(info, hist)
-
 def get_trade_plan(price, hist):
-    return {"action": "BUY", "entry": "320 – 335", "sl": "305", "target1": "361", "target2": "400", "rr": "1:2.8", "timeframe": "Valid till next expiry", "confluence": "High"}
+    if hist.empty or len(hist) < 20:
+        return {"action": "BUY", "entry": f"{round(price-18)} – {round(price+12)}", 
+                "sl": f"{round(price*0.96)}", "target1": f"{round(price*1.08)}", 
+                "target2": f"{round(price*1.18)}", "rr": "1:2.8", 
+                "timeframe": "Valid till next expiry", "confluence": "High"}
+    
+    atr = (hist['High'].tail(20).max() - hist['Low'].tail(20).min()) / 6
+    action = "BUY" if price > hist['Close'].tail(10).mean() else "HOLD"
+    return {
+        "action": action,
+        "entry": f"{round(price - atr*0.8)} – {round(price + atr*0.6)}",
+        "sl": f"{round(price - atr*1.2)} (ATR)",
+        "target1": f"{round(price + atr*2.3)}",
+        "target2": f"{round(price + atr*4.1)}",
+        "rr": "1:2.8",
+        "timeframe": "Valid till next expiry",
+        "confluence": "High" if action == "BUY" else "Medium"
+    }
 
+overall_risk, quant, tech, fund, senti = calculate_risk_score(info, hist, symbol_input)
 trade_plan = get_trade_plan(price, hist)
 
 # ====================== HEADER ======================
@@ -90,16 +117,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ====================== 4 TABS ======================
-tab_overview, tab_earnings, tab_sbc, tab_gann = st.tabs([
-    "📊 Overview", 
-    "📋 Earnings & Analysis", 
-    "🌟 SBC Analysis", 
-    "📐 Gann Analysis"
-])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📋 Earnings & Analysis", "🌟 SBC Analysis", "📐 Gann Analysis"])
 
-# ====================== TAB 1: OVERVIEW ======================
-with tab_overview:
-    col1, col2 = st.columns([1, 1])
+# TAB 1: OVERVIEW
+with tab1:
+    col1, col2 = st.columns([1,1])
     with col1:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("Composite Risk Score")
@@ -112,8 +134,8 @@ with tab_overview:
     with col2:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("Trade Plan")
-        color = "#10b981"
-        st.markdown(f'<span style="background:{color}20;color:{color};border:2px solid {color};padding:10px 24px;border-radius:9999px;font-size:1.4rem;font-weight:700">{trade_plan["action"]}</span>', unsafe_allow_html=True)
+        color = "#10b981" if trade_plan["action"] == "BUY" else "#f59e0b"
+        st.markdown(f'<span style="background:{color}20;color:{color};border:2px solid {color};padding:12px 28px;border-radius:9999px;font-size:1.5rem;font-weight:700">{trade_plan["action"]}</span>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             st.metric("Entry Zone", trade_plan["entry"])
@@ -123,86 +145,39 @@ with tab_overview:
             st.metric("Target 2", trade_plan["target2"])
         st.markdown('</div>', unsafe_allow_html=True)
 
-# ====================== TAB 2: EARNINGS & ANALYSIS ======================
-with tab_earnings:
+# TAB 2: EARNINGS & ANALYSIS
+with tab2:
     st.subheader("Quarterly Financial Trend")
-    # Rich quarterly table (realistic + dynamic style)
-    quarterly_data = pd.DataFrame({
-        "Quarter": ["Q4 FY26", "Q3 FY26", "Q2 FY26", "Q1 FY26"],
-        "Revenue (₹Cr)": ["51,524", "44,038", "38,990", "36,735"],
-        "YoY Rev%": ["+29.2%", "+15.9%", "+7.8%", "+5.2%"],
-        "EBITDA (₹Cr)": ["18,447", "14,218", "11,610", "9,838"],
-        "PAT (₹Cr)": ["9,352", "3,591", "5,560", "3,542"],
-        "EPS (₹)": ["25.45", "9.77", "15.13", "9.65"],
-        "Signal": ["RECORD", "HOLD", "BEAT", "MIXED"]
-    })
-    st.dataframe(quarterly_data, use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame({
+        "Quarter": ["Q4 FY26", "Q3 FY26", "Q2 FY26"],
+        "Revenue ₹Cr": ["51,524", "44,038", "38,990"],
+        "EBITDA ₹Cr": ["18,447", "14,218", "11,610"],
+        "PAT ₹Cr": ["9,352", "3,591", "5,560"],
+        "Signal": ["RECORD BEAT", "HOLD", "BEAT"]
+    }), use_container_width=True)
 
-    st.subheader("Latest Earnings Highlights (Q4 FY26)")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.success("**Revenue**: ₹51,524 Cr (+29% YoY) — All-time high")
-        st.success("**EBITDA**: ₹18,447 Cr (+59% YoY) — Record")
-        st.success("**PAT**: ₹9,352 Cr (+88.5% YoY)")
-    with c2:
-        st.info("**Net Debt/EBITDA**: 0.95× (best in 14 quarters)")
-        st.info("**Dividend**: ₹11/share (FY26 total ₹34/share — 39.5% yield)")
+    st.success("**Strong Earnings Momentum** — Record Q4 FY26 with robust growth across segments.")
 
-    st.subheader("Growth Catalysts vs Key Risks")
-    col_cat, col_risk = st.columns(2)
-    with col_cat:
-        st.markdown("**Catalysts & Tailwinds**")
-        st.write("• Demerger SOTP re-rating (₹900 target)")
-        st.write("• FY27 EBITDA guidance ₹72,000 Cr (+28%)")
-        st.write("• Critical minerals & EV demand")
-    with col_risk:
-        st.markdown("**Key Risks**")
-        st.write("• Parent company debt overhang")
-        st.write("• Commodity price cyclicality")
-        st.write("• Demerger execution risk")
-
-    st.success("**Investment Verdict**: BUY — Consensus Target ₹715 (114% upside) | Emkay SOTP ₹900 (169% upside)")
-
-# ====================== TAB 3: SBC ANALYSIS ======================
-with tab_sbc:
-    st.subheader("Sarvatobhadra Chakra (SBC) — Full In-Depth Analysis")
-    st.warning("Educational & confluence tool only")
+# TAB 3: SBC
+with tab3:
+    st.subheader("Sarvatobhadra Chakra (SBC) — Full Analysis")
     seed = sum(ord(c) for c in symbol_input)
     sbc_score = max(35, min(88, 52 + (seed % 38)))
-    
-    fig_sbc = go.Figure(go.Indicator(mode="gauge+number", value=sbc_score, gauge={'bar': {'color': "#a78bfa"}}))
-    fig_sbc.update_layout(height=220)
-    st.plotly_chart(fig_sbc, use_container_width=True)
-    
+    fig = go.Figure(go.Indicator(mode="gauge+number", value=sbc_score, gauge={'bar': {'color': "#a78bfa"}}))
+    fig.update_layout(height=220)
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown(f"**First Akshara:** {symbol_input[0]} | **Bias:** Mildly Bullish | Net Vedha: +2")
+
+# TAB 4: GANN
+with tab4:
+    st.subheader("Gann Price-Time Square — Full Analysis")
+    res1 = round(price * 1.038)
+    res2 = round(price * 1.072)
     st.markdown(f"""
-    **First Akshara (East Cell):** `{symbol_input[0]}` — Strong benefic Vedha from Jupiter & Venus  
-    **Planetary Vedha Summary:** Sun (Positive), Moon (Positive), Jupiter (Strong), Saturn (Negative)  
-    **Short-term (1–7 days):** Mildly Bullish  
-    **Medium-term (30–90 days):** Positive re-rating expected  
-    **Special Yoga:** Guru-Mangal active  
-    **Net Vedha Score:** +2 (Bullish bias)
+    **Current Price:** ₹{price:.2f}  
+    **Next Resistances:** ₹{res1} | ₹{res2}  
+    **Bias:** Moderately Bullish  
+    **Key Time Cycle:** Mid-June 2026 (Demerger Listing)
     """)
 
-# ====================== TAB 4: GANN ANALYSIS ======================
-with tab_gann:
-    st.subheader("Gann Price-Time Square — Full In-Depth Analysis")
-    st.warning("Educational & confluence tool only")
-    
-    gann_res1 = round(price * 1.038)
-    gann_res2 = round(price * 1.072)
-    
-    st.markdown(f"""
-    **Current Position:** ₹{price:.2f} — At 1×1 Gann angle (Cardinal level)  
-    **Next Resistances:** ₹{gann_res1} (1×1) • ₹{gann_res2} (Square of 9)  
-    **Major Time Cycles:**  
-    • Jun 5–8, 2026 — Demerger listing window  
-    • Jun 22, 2026 — 90° time square  
-    **Gann Bias:** Moderately Bullish | Strength: 7/10  
-    **Actionable Levels:** Buy zone ₹305–₹320 | Target ₹361–₹400 | SL below ₹289
-    """)
-
-st.caption("Not financial advice • For educational purposes only • Live data from yfinance")
-
-# Export button
-if st.button("📋 Export Full Report as Markdown"):
-    st.success("✅ Report copied to clipboard!")
+st.caption("Live data from yfinance • Not financial advice • For educational purposes only")
