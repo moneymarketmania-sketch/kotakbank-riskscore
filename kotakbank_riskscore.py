@@ -404,6 +404,17 @@ def fetch_stock_data(symbol: str) -> dict:
             "change_pct": round(np.random.uniform(-4, 4), 2),
             # ... add other fields if needed
         }
+        
+        def gann_square_of_nine(price: float):
+    """Returns nearby Gann SQ9 levels around the given price."""
+    root = math.sqrt(price)
+    levels = []
+    for i in range(-3, 4):
+        adjusted_root = root + i * 0.25
+        if adjusted_root > 0:
+            level = round(adjusted_root**2, 2)
+            levels.append(level)
+    return sorted(levels)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHART HELPERS
