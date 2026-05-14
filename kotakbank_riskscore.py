@@ -12,21 +12,8 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
     .stApp { background-color: #08090d; color: #dde1ef; }
-    .glass-card { 
-        background: linear-gradient(145deg, #12141d, #1a1d2b); 
-        border: 1px solid rgba(255,255,255,0.08); 
-        border-radius: 24px; 
-        padding: 28px; 
-        margin-bottom: 24px; 
-        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-    }
-    .header-bar {
-        background: linear-gradient(135deg, #1a1d2b, #12141d);
-        border: 1px solid #e85d2e;
-        border-radius: 20px;
-        padding: 24px 32px;
-        margin-bottom: 32px;
-    }
+    .glass-card { background: linear-gradient(145deg, #12141d, #1a1d2b); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 28px; margin-bottom: 24px; }
+    .header-bar { background: linear-gradient(135deg, #1a1d2b, #12141d); border: 1px solid #e85d2e; border-radius: 20px; padding: 24px 32px; margin-bottom: 32px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -36,10 +23,9 @@ symbol_input = st.sidebar.text_input("NSE Symbol", value="VEDL").upper().strip()
 
 if st.sidebar.button("🔄 Fetch Live Data", type="primary", use_container_width=True):
     st.session_state.symbol = symbol_input
-    st.session_state.fetch = True
     st.rerun()
 
-# Use session state
+# Default symbol
 if "symbol" not in st.session_state:
     st.session_state.symbol = symbol_input
 
@@ -47,7 +33,7 @@ current_symbol = st.session_state.symbol
 stock_symbol = f"{current_symbol}.NS"
 
 # ====================== FETCH DATA ======================
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=60)
 def get_data(ticker):
     try:
         stock = yf.Ticker(ticker)
