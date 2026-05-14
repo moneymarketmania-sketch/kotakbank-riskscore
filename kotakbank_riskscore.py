@@ -1,6 +1,5 @@
 import streamlit as st
 import plotly.graph_objects as go
-import pandas as pd
 import yfinance as yf
 import numpy as np
 from datetime import datetime, timedelta
@@ -12,21 +11,8 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
     .stApp { background-color: #08090d; color: #dde1ef; }
-    .glass-card { 
-        background: linear-gradient(145deg, #12141d, #1a1d2b); 
-        border: 1px solid rgba(255,255,255,0.08); 
-        border-radius: 24px; 
-        padding: 28px; 
-        margin-bottom: 24px; 
-        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-    }
-    .header-bar {
-        background: linear-gradient(135deg, #1a1d2b, #12141d);
-        border: 1px solid #e85d2e;
-        border-radius: 20px;
-        padding: 24px 32px;
-        margin-bottom: 32px;
-    }
+    .glass-card { background: linear-gradient(145deg, #12141d, #1a1d2b); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 28px; margin-bottom: 24px; }
+    .header-bar { background: linear-gradient(135deg, #1a1d2b, #12141d); border: 1px solid #e85d2e; border-radius: 20px; padding: 24px 32px; margin-bottom: 32px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -35,13 +21,19 @@ st.sidebar.header("📊 NSE Risk Score Report")
 symbol_input = st.sidebar.text_input("NSE Symbol", value="VEDL").upper().strip()
 
 if st.sidebar.button("🔄 Fetch Live Data", type="primary", use_container_width=True):
-    st.session_state.fetch_trigger = True
-    if "previous_symbol" in st.session_state:
-        if st.session_state.previous_symbol != symbol_input:
-            st.cache_data.clear()  # Force clear cache on symbol change
+    st.session_state.symbol = symbol_input
+    st.session_state.fetch = True
+    st.rerun()
 
-# ====================== DATA FETCH ======================
-@st.cache_data(ttl=120)
+# Use session state to force update
+if "symbol" not in st.session_state:
+    st.session_state.symbol = symbol_input
+
+current_symbol = st.session_state.symbol
+stock_symbol = f"{current_symbol}.NS"
+
+# ====================== FETCH DATA ======================
+@st.cache_data(ttl=60)
 def get_data(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -51,12 +43,7 @@ def get_data(ticker):
     except:
         return None, pd.DataFrame()
 
-info, hist = get_data(f"{symbol_input}.NS")
-
-# Force refresh if symbol changed
-if "previous_symbol" not in st.session_state or st.session_state.previous_symbol != symbol_input:
-    st.session_state.previous_symbol = symbol_input
-    info, hist = get_data(f"{symbol_input}.NS")
+info, hist = get_data(stock_symbol)
 
 # Live Values
 if info and not hist.empty:
@@ -66,16 +53,16 @@ if info and not hist.empty:
     change_pct = (change / prev_close) * 100 if prev_close else 0
     volume = f"{info.get('volume', 0)/10**7:.2f}M"
     mkt_cap = f"₹{(info.get('marketCap', 0)/10**12):.2f}T"
-    name = info.get('longName', f"{symbol_input} Ltd.")
+    name = info.get('longName', f"{current_symbol} Ltd.")
 else:
     price = 334.55
     change = 11.20
     change_pct = 3.46
     volume = "18.31M"
     mkt_cap = "₹1.24T"
-    name = f"{symbol_input} Ltd."
+    name = f"{current_symbol} Ltd."
 
-# ====================== DYNAMIC CALCULATIONS ======================
+# ====================== CALCULATIONS ======================
 def calculate_risk_score(info, hist, symbol):
     if hist.empty or len(hist) < 30:
         return 47, 58, 72, 81, 45
@@ -91,7 +78,7 @@ def calculate_risk_score(info, hist, symbol):
     overall = int(0.4*quant + 0.3*tech + 0.2*fund + 0.1*senti)
     return overall, quant, tech, fund, senti
 
-overall_risk, quant, tech, fund, senti = calculate_risk_score(info, hist, symbol_input)
+overall_risk, quant, tech, fund, senti = calculate_risk_score(info, hist, current_symbol)
 
 def get_trade_plan(price, hist):
     if hist.empty or len(hist) < 20:
@@ -100,16 +87,9 @@ def get_trade_plan(price, hist):
                 "timeframe": "Valid till next expiry", "confluence": "High"}
     atr = (hist['High'].tail(20).max() - hist['Low'].tail(20).min()) / 6
     action = "BUY" if price > hist['Close'].tail(10).mean() else "HOLD"
-    return {
-        "action": action,
-        "entry": f"{round(price - atr*0.8)} – {round(price + atr*0.6)}",
-        "sl": f"{round(price - atr*1.2)} (ATR)",
-        "target1": f"{round(price + atr*2.4)}",
-        "target2": f"{round(price + atr*4.2)}",
-        "rr": "1:2.8",
-        "timeframe": "Valid till next expiry",
-        "confluence": "High" if action == "BUY" else "Medium"
-    }
+    return {"action": action, "entry": f"{round(price - atr*0.8)} – {round(price + atr*0.6)}",
+            "sl": f"{round(price - atr*1.2)} (ATR)", "target1": f"{round(price + atr*2.4)}",
+            "target2": f"{round(price + atr*4.2)}", "rr": "1:2.8", "timeframe": "Valid till next expiry", "confluence": "High"}
 
 trade_plan = get_trade_plan(price, hist)
 
@@ -118,7 +98,7 @@ st.markdown(f"""
 <div class="header-bar">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px">
         <div>
-            <span style="background:#e85d2e;color:white;padding:8px 20px;border-radius:12px;font-weight:700">NSE: {symbol_input}</span>
+            <span style="background:#e85d2e;color:white;padding:8px 20px;border-radius:12px;font-weight:700">NSE: {current_symbol}</span>
             <span style="font-size:28px;font-weight:700;margin-left:16px;color:white">{name}</span>
         </div>
         <div style="text-align:right">
@@ -135,7 +115,6 @@ st.markdown(f"""
 # ====================== TABS ======================
 tab1, tab2, tab3 = st.tabs(["📊 Overview", "🌟 SBC Analysis", "📐 Gann Analysis"])
 
-# TAB 1: OVERVIEW
 with tab1:
     col1, col2 = st.columns([1,1])
     with col1:
@@ -145,8 +124,7 @@ with tab1:
             mode="gauge+number",
             value=overall_risk,
             number={'font': {'size': 82, 'color': "#fbbf24"}},
-            gauge={'axis': {'range': [0,100]}, 'bar': {'color': "#fbbf24"}},
-            title={'text': "MODERATE RISK"}
+            gauge={'axis': {'range': [0,100]}, 'bar': {'color': "#fbbf24"}}
         ))
         fig.update_layout(height=380, paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
@@ -166,42 +144,32 @@ with tab1:
             st.metric("Target 2", trade_plan["target2"])
         st.markdown('</div>', unsafe_allow_html=True)
 
-# TAB 2: SBC
 with tab2:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.subheader("🌟 Sarvatobhadra Chakra (SBC) — Full Analysis")
-    seed = sum(ord(c) for c in symbol_input)
+    seed = sum(ord(c) for c in current_symbol)
     sbc_score = max(35, min(88, 52 + (seed % 38)))
     fig = go.Figure(go.Indicator(mode="gauge+number", value=sbc_score, gauge={'bar': {'color': "#c4b5fd"}}))
     fig.update_layout(height=240)
     st.plotly_chart(fig, use_container_width=True)
     st.markdown(f"""
-    **First Akshara:** `{symbol_input[0]}` — Benefic Vedha from Jupiter & Venus  
-    **Short-term Bias:** Mildly Bullish  
-    **Medium-term:** Positive re-rating expected  
+    **First Akshara:** `{current_symbol[0]}` — Benefic Vedha  
+    **Bias:** Mildly Bullish  
     **Net Vedha Score:** +2
     """)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# TAB 3: GANN
 with tab3:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.subheader("📐 Gann Price-Time Square — Full Analysis")
     res1 = round(price * 1.038)
     res2 = round(price * 1.072)
-    support = round(price * 0.962)
     st.markdown(f"""
-    **Current Price:** ₹{price:.2f} — At **1×1 Cardinal Level**  
-    **Support:** ₹{support}  
-    **Resistance 1:** ₹{res1}  
-    **Resistance 2:** ₹{res2}  
-
-    **Major Time Cycles:**  
-    • Minor: {(datetime.now() + timedelta(days=12)).strftime('%d %b %Y')}  
-    • Major: {(datetime.now() + timedelta(days=45)).strftime('%d %b %Y')}  
-
-    **Bias:** Moderately Bullish | Strength: **7/10**
+    **Current Price:** ₹{price:.2f} — 1×1 Cardinal Level  
+    **Support:** ₹{round(price*0.962)}  
+    **Resistance:** ₹{res1} | ₹{res2}  
+    **Bias:** Moderately Bullish
     """)
     st.markdown('</div>', unsafe_allow_html=True)
 
-st.caption("Live yfinance data • Not financial advice • Educational use only")
+st.caption("Live yfinance data • Not financial advice")
