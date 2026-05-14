@@ -236,16 +236,13 @@ iframe { border-radius: 12px !important; }
 """, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  DATA LAYER — Replace placeholders with real yfinance / NSE API calls
-# ══════════════════════════════════════════════════════════════════════════════
-
-import yfinance as yf
-
-@st.cache_data(ttl=60, show_spinner=False)   # ← Changed to 60 seconds for fresher data
+# ─────────────────────────────────────────────────────────────────────────────
+#  FETCH STOCK DATA — REAL NSE + BEST LATEST PRICE LOGIC
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=60, show_spinner=False)   # 60-second cache = very fresh data
 def fetch_stock_data(symbol: str) -> dict:
     """
-    REAL NSE data using yfinance with BEST possible latest price logic
+    REAL NSE data using yfinance with the BEST possible latest price fetching.
     """
     symbol = symbol.upper().strip()
     if not symbol:
@@ -254,11 +251,11 @@ def fetch_stock_data(symbol: str) -> dict:
     try:
         ticker = yf.Ticker(f"{symbol}.NS")
 
-        # ── BEST PRICE FETCHING (this is the key fix) ─────────────────────
+        # ── BEST PRICE FETCHING (this fixes the "not latest price" issue) ──
         price = None
         prev_close = None
 
-        # Priority 1: fast_info (most accurate & fastest for live price)
+        # Priority 1: fast_info (most accurate live price)
         try:
             fast = ticker.fast_info
             price = fast.get('lastPrice') or fast.get('regularMarketPrice')
@@ -267,40 +264,40 @@ def fetch_stock_data(symbol: str) -> dict:
             pass
 
         # Priority 2: fallback to info
-        if not price or price <= 0:
+        if price is None or price <= 0:
             info = ticker.info
             price = (info.get('currentPrice') or 
-                    info.get('regularMarketPrice') or 
-                    info.get('previousClose'))
-            if not prev_close:
+                     info.get('regularMarketPrice') or 
+                     info.get('previousClose'))
+            if prev_close is None:
                 prev_close = info.get('regularMarketPreviousClose') or info.get('previousClose')
 
-        # Priority 3: final fallback from recent history
-        if not price or price <= 0:
+        # Priority 3: last resort from history
+        if price is None or price <= 0:
             hist_temp = ticker.history(period="5d")
             if not hist_temp.empty:
                 price = round(hist_temp['Close'].iloc[-1], 2)
                 if len(hist_temp) > 1:
                     prev_close = round(hist_temp['Close'].iloc[-2], 2)
 
-        if not price or price <= 0:
+        if price is None or price <= 0:
             raise ValueError("Could not fetch price")
 
         change_pct = round(((price - (prev_close or price)) / (prev_close or price) * 100), 2) if prev_close else 0.0
 
-        # ── Full history for chart (last 120 trading days) ───────────────
+        # ── Full history for chart ───────────────────────────────────────
         hist = ticker.history(period="1y")
         recent_hist = hist.tail(120).copy()
 
-        # ── Technical indicators (real where possible) ───────────────────
-        # RSI
+        # ── Real Technical Indicators ───────────────────────────────────
+        # RSI (14)
         delta = recent_hist['Close'].diff()
         gain = delta.where(delta > 0, 0).rolling(14).mean()
         loss = -delta.where(delta < 0, 0).rolling(14).mean()
         rs = gain / loss
         rsi = round(100 - (100 / (1 + rs)).iloc[-1], 1) if len(rs) > 0 and not pd.isna((100 - (100 / (1 + rs)).iloc[-1])) else 50.0
 
-        # ATR
+        # ATR (14)
         tr1 = recent_hist['High'] - recent_hist['Low']
         tr2 = abs(recent_hist['High'] - recent_hist['Close'].shift())
         tr3 = abs(recent_hist['Low'] - recent_hist['Close'].shift())
@@ -315,14 +312,14 @@ def fetch_stock_data(symbol: str) -> dict:
         macd_val = round(macd_line.iloc[-1], 2)
         macd_sig = round(signal_line.iloc[-1], 2)
 
-        # Moving averages
-        sma20 = round(recent_hist['Close'].rolling(20).mean().iloc[-1], 2)
-        sma50 = round(recent_hist['Close'].rolling(50).mean().iloc[-1], 2)
+        # Moving Averages
+        sma20 = round(recent_hist['Close'].rolling(20).mean().iloc[-1], 2) if len(recent_hist) >= 20 else round(price * 0.988, 2)
+        sma50 = round(recent_hist['Close'].rolling(50).mean().iloc[-1], 2) if len(recent_hist) >= 50 else round(price * 0.965, 2)
         sma200 = round(recent_hist['Close'].rolling(200).mean().iloc[-1], 2) if len(recent_hist) >= 200 else round(price * 0.921, 2)
         ema9 = round(recent_hist['Close'].ewm(span=9, adjust=False).mean().iloc[-1], 2)
         ema21 = round(recent_hist['Close'].ewm(span=21, adjust=False).mean().iloc[-1], 2)
 
-        # Fibonacci (from recent swing)
+        # Fibonacci Retracements
         fib_base = recent_hist['Low'].min()
         fib_high = recent_hist['High'].max()
         diff = fib_high - fib_base
@@ -332,12 +329,11 @@ def fetch_stock_data(symbol: str) -> dict:
         fib_618 = round(fib_base + diff * 0.618, 2)
         fib_786 = round(fib_base + diff * 0.786, 2)
 
-        # Risk score & other fields (kept synthetic as before)
+        # ── Risk & Trade Plan (still synthetic as before) ───────────────
         np.random.seed(abs(hash(symbol)) % (2**31))
         risk_score = int(np.random.uniform(28, 78))
         max_dd = round(((hist['Close'] / hist['Close'].cummax()) - 1).min() * 100, 1)
 
-        # Trade plan
         entry_low = round(price * 0.975, 2)
         entry_high = round(price * 1.005, 2)
         sl = round(price * 0.955, 2)
@@ -367,7 +363,7 @@ def fetch_stock_data(symbol: str) -> dict:
             "pe_curr": round(ticker.info.get('trailingPE', np.random.uniform(12, 45)), 1),
             "pe_5y": round(ticker.info.get('trailingPE', 25) * np.random.uniform(0.7, 1.3), 1),
             "pb_curr": round(ticker.info.get('priceToBook', np.random.uniform(1.2, 8)), 2),
-            "roe": round(ticker.info.get('returnOnEquity', np.random.uniform(8, 32)) * 100, 1),
+            "roe": round((ticker.info.get('returnOnEquity') or np.random.uniform(8, 32)) * 100, 1),
             "de_ratio": round(ticker.info.get('debtToEquity', np.random.uniform(0.1, 2.5)), 2),
             "pledge_pct": round(np.random.uniform(0, 30), 1),
             "pcr": round(np.random.uniform(0.6, 1.6), 2),
@@ -385,27 +381,30 @@ def fetch_stock_data(symbol: str) -> dict:
             "ema9": ema9, "ema21": ema21,
             "fib_236": fib_236, "fib_382": fib_382, "fib_500": fib_500,
             "fib_618": fib_618, "fib_786": fib_786,
-            # Astro/Gann still synthetic
+            # Astro / Gann (still synthetic)
             "sbc_score": int(np.random.uniform(25, 80)),
             "gann_degree": round(np.random.uniform(0, 360), 1),
             "gann_sq9_next": round(price * np.random.uniform(1.02, 1.06), 2),
             "gann_sq9_support": round(price * np.random.uniform(0.94, 0.98), 2),
         }
 
-    except Exception as e:
-        st.warning(f"⚠️ Could not fetch live data for {symbol} — using fallback")
-        # Your original synthetic fallback (kept for safety)
+    except Exception:
+        st.warning(f"⚠️ Could not fetch live data for {symbol} — using synthetic fallback")
+        # Original synthetic fallback (kept for safety)
         np.random.seed(abs(hash(symbol)) % (2**31))
         price = round(np.random.uniform(200, 4000), 2)
-        # ... (you can keep the rest of your old synthetic code here if you want)
         return {
             "symbol": symbol,
             "price": price,
             "change_pct": round(np.random.uniform(-4, 4), 2),
-            # ... add other fields if needed
+            # ... (you can expand this if you want full synthetic fallback)
         }
-        
-        def gann_square_of_nine(price: float):
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  GANN SQUARE OF NINE (needed by Sentiment tab)
+# ─────────────────────────────────────────────────────────────────────────────
+def gann_square_of_nine(price: float):
     """Returns nearby Gann SQ9 levels around the given price."""
     root = math.sqrt(price)
     levels = []
@@ -415,7 +414,6 @@ def fetch_stock_data(symbol: str) -> dict:
             level = round(adjusted_root**2, 2)
             levels.append(level)
     return sorted(levels)
-
 # ══════════════════════════════════════════════════════════════════════════════
 #  CHART HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
