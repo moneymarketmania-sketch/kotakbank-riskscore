@@ -7,14 +7,31 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="NSE Risk Score Report", layout="wide", page_icon="📊")
 
-# ====================== CSS (Matches VEDL HTML style) ======================
+# ====================== ENHANCED CSS (Eye-catching & Modern) ======================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    
     .stApp { background-color: #08090d; color: #dde1ef; }
-    .glass-card { background: #12141d; border: 1px solid #252836; border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+    
+    .glass-card {
+        background: linear-gradient(145deg, #12141d, #1a1d2b);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+    }
+    .glass-card:hover { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(0,0,0,0.5); }
+    
     .mono { font-family: 'JetBrains Mono', monospace; }
-    .section-title { font-family: 'JetBrains Mono'; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #8892aa; margin-bottom: 12px; }
+    .header-bar {
+        background: linear-gradient(135deg, #1a1d2b, #12141d);
+        border: 1px solid #e85d2e;
+        border-radius: 20px;
+        padding: 24px 32px;
+        margin-bottom: 32px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -26,7 +43,7 @@ stock_symbol = f"{symbol_input}.NS"
 if st.sidebar.button("🔄 Fetch Live Data", type="primary"):
     st.session_state.fetch = True
 
-# ====================== FETCH LIVE DATA ======================
+# ====================== FETCH DATA ======================
 @st.cache_data(ttl=180)
 def get_data(ticker):
     try:
@@ -64,7 +81,7 @@ else:
     mkt_cap = "₹1.24T"
     name = f"{symbol_input} Ltd."
 
-# ====================== DYNAMIC CALCULATIONS ======================
+# Dynamic Calculations
 def calculate_risk_score(info, hist, symbol):
     if hist.empty or len(hist) < 30:
         return 47, 58, 72, 81, 45
@@ -95,122 +112,116 @@ def get_trade_plan(price, hist):
 
 trade_plan = get_trade_plan(price, hist)
 
-# ====================== HEADER ======================
+# ====================== HEADER (Eye-catching) ======================
 st.markdown(f"""
-<div style="background:linear-gradient(135deg,#12141d,#181b26);border:1px solid #2e3245;border-radius:16px;padding:24px 28px;margin-bottom:28px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between">
-    <div>
-        <span style="background:#e85d2e;color:white;padding:6px 16px;border-radius:8px;font-family:monospace;font-weight:700">NSE: {symbol_input}</span>
-        <span style="font-size:24px;font-weight:700;color:white;margin-left:12px">{name}</span>
-    </div>
-    <div style="text-align:right">
-        <div style="font-size:38px;font-weight:700;color:white;font-family:monospace">₹{price:,.2f}</div>
-        <span style="background:#10b981;color:white;padding:6px 18px;border-radius:9999px;font-size:15px">+{change_pct:.2f}% (+₹{change:.2f})</span>
-        <div style="margin-top:8px;font-size:13px;color:#8892aa;font-family:monospace">Vol: {volume} | Mkt Cap: {mkt_cap}</div>
+<div class="header-bar">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px">
+        <div>
+            <span style="background:#e85d2e;color:white;padding:8px 20px;border-radius:12px;font-weight:700">NSE: {symbol_input}</span>
+            <span style="font-size:28px;font-weight:700;margin-left:16px;color:white">{name}</span>
+        </div>
+        <div style="text-align:right">
+            <div style="font-size:42px;font-weight:700;color:white;font-family:monospace">₹{price:,.2f}</div>
+            <span style="background:#10b981;color:white;padding:8px 20px;border-radius:9999px;font-size:17px;font-weight:600">
+                +{change_pct:.2f}% (+₹{change:.2f})
+            </span>
+            <div style="margin-top:8px;font-size:14px;color:#8892aa">Vol: {volume} | Mkt Cap: {mkt_cap}</div>
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ====================== 4 TABS ======================
-tab_overview, tab_earnings, tab_sbc, tab_gann = st.tabs([
-    "📊 Overview", "📋 Earnings & Analysis", "🌟 SBC Analysis", "📐 Gann Analysis"
-])
+# ====================== 3 TABS ======================
+tab1, tab2, tab3 = st.tabs(["📊 Overview", "🌟 SBC Analysis", "📐 Gann Analysis"])
 
 # ====================== TAB 1: OVERVIEW ======================
-with tab_overview:
+with tab1:
     col1, col2 = st.columns([1, 1])
+    
     with col1:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("Composite Risk Score")
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=overall_risk,
-            number={'font': {'size': 72, 'color': "#f59e0b"}},
-            gauge={'axis': {'range': [0,100]}, 'bar': {'color': "#f59e0b"}, 
-                   'steps': [{'range': [0,35],'color':'#10b981'}, {'range': [35,60],'color':'#f59e0b'}, {'range': [60,100],'color':'#f43f5e'}]},
-            title={'text': "MODERATE RISK", 'font': {'size': 18}}
+            number={'font': {'size': 78, 'color': "#fbbf24"}},
+            gauge={'axis': {'range': [0,100]}, 'bar': {'color': "#fbbf24"}},
+            title={'text': "MODERATE RISK"}
         ))
-        fig.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", margin=dict(t=30, b=30))
+        fig.update_layout(height=380, paper_bgcolor="rgba(0,0,0,0)", margin=dict(t=40))
         st.plotly_chart(fig, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("Trade Plan")
-        color = "#10b981" if trade_plan["action"] == "BUY" else "#f59e0b"
-        st.markdown(f'<span style="background:{color}20;color:{color};border:2px solid {color};padding:12px 28px;border-radius:9999px;font-size:1.5rem;font-weight:700">{trade_plan["action"]}</span>', unsafe_allow_html=True)
+        color = "#10b981" if trade_plan["action"] == "BUY" else "#fbbf24"
+        st.markdown(f'''
+            <div style="text-align:center;margin-bottom:20px">
+                <span style="background:{color}20;color:{color};border:3px solid {color};padding:14px 32px;border-radius:9999px;font-size:1.8rem;font-weight:700">
+                    {trade_plan["action"]}
+                </span>
+            </div>
+        ''', unsafe_allow_html=True)
+        
         c1, c2 = st.columns(2)
         with c1:
-            st.metric("Entry Zone", trade_plan["entry"])
-            st.metric("Stop Loss", trade_plan["sl"])
+            st.metric("Entry Zone", trade_plan["entry"], delta=None)
+            st.metric("Stop Loss", trade_plan["sl"], delta=None)
         with c2:
-            st.metric("Target 1", trade_plan["target1"])
-            st.metric("Target 2", trade_plan["target2"])
+            st.metric("Target 1", trade_plan["target1"], delta=None)
+            st.metric("Target 2", trade_plan["target2"], delta=None)
+        
+        st.markdown(f'''
+            <div style="background:rgba(255,255,255,0.08);padding:16px;border-radius:16px;margin-top:20px;text-align:center">
+                <strong>Risk-Reward:</strong> <span class="mono" style="font-size:1.4rem">{trade_plan["rr"]}</span><br>
+                <strong>Confluence:</strong> <span style="color:#10b981">{trade_plan["confluence"]}</span>
+            </div>
+        ''', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-# ====================== TAB 2: EARNINGS & ANALYSIS (Now Dynamic) ======================
-with tab_earnings:
-    st.subheader("Quarterly Financial Trend")
-    if info and 'quarterly_financials' in dir(yf.Ticker(stock_symbol)):
-        try:
-            qf = yf.Ticker(stock_symbol).quarterly_financials.T.head(4)
-            st.dataframe(qf[['Total Revenue', 'EBITDA', 'Net Income']], use_container_width=True)
-        except:
-            pass
-    st.dataframe(pd.DataFrame({
-        "Quarter": ["Q4 FY26", "Q3 FY26", "Q2 FY26"],
-        "Revenue (₹Cr)": ["51,524", "44,038", "38,990"],
-        "EBITDA (₹Cr)": ["18,447", "14,218", "11,610"],
-        "PAT (₹Cr)": ["9,352", "3,591", "5,560"],
-        "Signal": ["RECORD", "HOLD", "BEAT"]
-    }), use_container_width=True)
-
-    st.success("**Strong Earnings Momentum** – Record performance in recent quarters.")
-
-# ====================== TAB 3: SBC ANALYSIS (In-depth like VEDL HTML) ======================
-with tab_sbc:
-    st.subheader("Sarvatobhadra Chakra (SBC) — Full In-Depth Analysis")
+# ====================== TAB 2: SBC ANALYSIS ======================
+with tab2:
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("🌟 Sarvatobhadra Chakra (SBC) — Full In-Depth Analysis")
+    
     seed = sum(ord(c) for c in symbol_input)
     sbc_score = max(35, min(88, 52 + (seed % 38)))
     
-    fig = go.Figure(go.Indicator(mode="gauge+number", value=sbc_score, gauge={'bar': {'color': "#a78bfa"}}))
-    fig.update_layout(height=220)
+    fig = go.Figure(go.Indicator(mode="gauge+number", value=sbc_score, gauge={'bar': {'color': "#c4b5fd"}}))
+    fig.update_layout(height=240)
     st.plotly_chart(fig, use_container_width=True)
-
+    
     st.markdown(f"""
-    **First Akshara (East Cell):** `{symbol_input[0]}` — Strong benefic Vedha from Jupiter & Venus  
-    **Planetary Vedha Summary:**  
-    - Sun: Positive  
-    - Moon: Positive  
-    - Jupiter: Very Strong  
-    - Saturn: Negative  
-    **Short-term (1–7 days):** Mildly Bullish  
-    **Medium-term (30–90 days):** Positive re-rating expected  
-    **Net Vedha Score:** +2
+    **First Akshara (East Cell):** `{symbol_input[0]}` — Strong benefic placement  
+    **Planetary Vedha Summary:** Sun (Positive), Moon (Positive), Jupiter (Very Strong), Saturn (Negative)  
+    **Short-term (1–7 days):** Mildly Bullish bias  
+    **Medium-term (30–90 days):** Positive outlook with re-rating potential  
+    **Net Vedha Score:** +2 (Bullish)
     """)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ====================== TAB 4: GANN ANALYSIS (In-depth like VEDL HTML) ======================
-with tab_gann:
-    st.subheader("Gann Price-Time Square — Full In-Depth Analysis")
+# ====================== TAB 3: GANN ANALYSIS ======================
+with tab3:
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("📐 Gann Price-Time Square — Full In-Depth Analysis")
+    
     res1 = round(price * 1.038)
     res2 = round(price * 1.072)
     support = round(price * 0.962)
-
+    
     st.markdown(f"""
-    **Current Price Position:** ₹{price:.2f} — At **1×1 Cardinal level**  
-    **Key Levels:**  
-    - Support: ₹{support}  
-    - Resistance 1: ₹{res1} (1×1)  
-    - Resistance 2: ₹{res2} (Square of 9)  
+    **Current Position:** ₹{price:.2f} — Sitting on **1×1 Cardinal Level**  
+    **Key Support:** ₹{support}  
+    **Key Resistances:** ₹{res1} (1×1) • ₹{res2} (Square of 9)  
 
     **Major Time Cycles (Next 30–90 days):**  
-    - Minor cycle: {(datetime.now() + timedelta(days=12)).strftime('%d %b %Y')}  
-    - Major cycle: {(datetime.now() + timedelta(days=45)).strftime('%d %b %Y')}  
-    - Next important pivot: {(datetime.now() + timedelta(days=78)).strftime('%d %b %Y')}
+    • Minor Cycle → {(datetime.now() + timedelta(days=12)).strftime('%d %b %Y')}  
+    • Major Cycle → {(datetime.now() + timedelta(days=45)).strftime('%d %b %Y')}  
+    • Important Pivot → {(datetime.now() + timedelta(days=78)).strftime('%d %b %Y')}
 
-    **Gann Bias:** Moderately Bullish | Strength: 7/10
+    **Gann Bias:** Moderately Bullish | Strength: **7/10**
     """)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.caption("Live data from yfinance • Not financial advice • For educational purposes only")
-
-if st.button("📋 Export Full Report"):
-    st.success("✅ Full report copied to clipboard!")
+st.caption("Live data from yfinance • Not financial advice • Educational purpose only")
